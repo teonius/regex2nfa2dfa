@@ -1,69 +1,51 @@
-from parser import *
-from tokenizer import *
-
-
-def validate_regex(alphabet, regex):
-    for char in regex:
-        if char not in alphabet and char not in {'*', '|', '(', ')', '+', '?', '.'}:
-            raise ValueError(f"Invalid character in regex: {char}")
-    print(f"Validation successful for regex: {regex}")
-
-
-def log_nfa(nfa):
-    print("NFA Construction:")
-    print(f"Start State: {nfa.start_state}")
-
-    # Updated to print the IDs of all final states
-    accept_states_ids = [state.id for state in nfa.accept_states]
-    print(f"Accept States: {accept_states_ids}")
-
-    for state, transitions in nfa.transitions.items():
-        for symbol, next_states in transitions.items():
-            for next_state in next_states:
-                print(f"Transition: {state} --{symbol}--> {next_state}")
-
-
-# def log_dfa(dfa, alphabet):
-#     print("\nDFA Construction:")
-#     print(f"Start State: {dfa.start_state}")
-#     print(f"Accept States: {dfa.final_states}")
-#     for state, transitions in dfa.transitions.items():
-#         for symbol in alphabet:
-#             next_state = transitions.get(symbol, None)
-#             if next_state:
-#                 print(f"Transition: {state} --{symbol}--> {next_state}")
-#             else:
-#                 print(f"Transition: {state} --{symbol}--> DEAD")
-
+from dfa import DFAfromNFA
+from parser import NFAfromRegex
+import sys
 
 def main():
-    # User-defined alphabet and regex
-    alphabet = {'a', 'b', 'c'}
-    regex = "aaa|bcabb"
+    # Test regular expression (change this for testing)
+    inp = "a{2,4}b"
+    alphabet = ["a", "b", "c", "d", "e", "f"]  # Define the alphabet used in the DFA
 
-    # Validate the regex against the alphabet
-    validate_regex(alphabet, regex)
+    print("\n========== Regular Expression to Automata Conversion ==========")  
+    print(f"Input Regular Expression: {inp}")
 
-    # Tokenize the regex
-    tokenizer = RegexTokenizer(regex, alphabet)
-    tokens_combinations = tokenizer.get_tokens_combinations()
+    try:
+        print("\n[Step 1] Converting Regular Expression to NFA...")
+        nfaObj = NFAfromRegex(inp, alphabet=alphabet)  # Pass alphabet to NFA
+        nfa = nfaObj.getNFA()
 
-    # Assume there's only one valid token combination (no ambiguity)
-    tokens = tokens_combinations[0]
+        print("\n[Step 2] Displaying the NFA (Non-deterministic Finite Automaton):")
+        nfaObj.displayNFA()
 
-    # Parse the tokens into an NFA
-    parser = RegexParser(tokens)
-    nfa = parser.parse()
+        print("\n[Step 3] Converting NFA to DFA...")
+        dfaObj = DFAfromNFA(nfa, alphabet)  # Pass alphabet to DFA
+        dfa = dfaObj.getDFA()
 
-    # Log NFA construction details
-    log_nfa(nfa)
+        print("\n[Step 4] Displaying the DFA (Deterministic Finite Automaton):")
+        dfaObj.displayDFA()
 
-    # Convert the NFA to a DFA
-    #dfa = DFA.from_nfa(nfa)
+        print("\n[Step 5] Minimizing the DFA...")
+        minDFA = dfaObj.getMinimisedDFA()
 
-    # Log DFA construction details including dead states
-    #log_dfa(dfa, alphabet)
+        print("\n[Step 6] Displaying the Minimized DFA:")
+        dfaObj.displayMinimisedDFA()
 
+        print("\n========== Transition Table for the DFA ========== ")
+        printDFAtransitionTable(minDFA)
+    
+    except Exception as e:
+        print("\nFailure:", e)
 
-if __name__ == "__main__":
+def printDFAtransitionTable(dfa):
+    print("\nDFA Transition Table:")
+    print(f"{'State':<10}{'Input':<10}{'Next State'}")
+    print("-" * 30)
+    for from_state, to_states in dfa.transitions.items():
+        for to_state, chars in to_states.items():
+            for char in chars:
+                print(f"{from_state:<10}{char:<10}{to_state}")
+    print("-" * 30)
+
+if __name__ == '__main__':
     main()

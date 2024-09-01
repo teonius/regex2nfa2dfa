@@ -1,119 +1,125 @@
-class State:
-    def __init__(self, id):
-        self.id = id
-        self.transitions = {}  # Dictionary to store transitions
-        self.epsilon_transitions = set()  # Set to store epsilon transitions
+from nfa import Automata
 
-    def add_transition(self, symbol, state):
-        if symbol == "ε":
-            self.epsilon_transitions.add(state)
-        else:
-            if symbol not in self.transitions:
-                self.transitions[symbol] = set()
-            self.transitions[symbol].add(state)
+class DFAfromNFA:
+    def __init__(self, nfa, alphabet):
+        self.alphabet = {char for char in alphabet if char in nfa.language}
+        self.dfa = None
+        self.minDFA = None
+        self.buildDFA(nfa)
+        self.minimise()
 
-    def add_epsilon_transition(self, state):
-        self.add_transition("ε", state)
+    def getDFA(self):
+        return self.dfa
 
-    def __str__(self):
-        return f"State {self.id}"
+    def getMinimisedDFA(self):
+        return self.minDFA
 
-class DFAState:
-    def __init__(self, id, nfa_states):
-        self.id = id
-        self.nfa_states = nfa_states  # The set of NFA states this DFA state represents
-        self.transitions = {}  # Dictionary to store transitions
+    def displayDFA(self):
+        self.dfa.display()
 
-    def add_transition(self, from_state, to_state, symbol):
-        if from_state != to_state or symbol != 'ε':
-            if from_state not in self.transitions:
-                self.transitions[from_state] = {}
-            if symbol not in self.transitions[from_state]:
-                self.transitions[from_state][symbol] = set()
-            self.transitions[from_state][symbol].add(to_state)
+    def displayMinimisedDFA(self):
+        self.minDFA.display()
 
-    def __str__(self):
-        return f"DFAState {self.id}"
+    def buildDFA(self, nfa):
+        allstates = {}
+        eclose = {}
+        count = 1
 
-class DFA:
-    state_counter = 0
+        # Calculate the epsilon closure for the start state
+        state1 = frozenset(sorted(nfa.getEClose(nfa.startstate)))
+        eclose[nfa.startstate] = state1
+        dfa = Automata(nfa.language)
+        dfa.setstartstate(count)
+        states = [[state1, count]]
+        allstates[count] = state1
+        count += 1
 
-    def __init__(self, start_state, accept_states):
-        self.start_state = start_state
-        self.accept_states = accept_states
-        self.states = set()
+        while states:
+            state, fromindex = states.pop()
+            for char in sorted(self.alphabet):
+                if char == Automata.epsilon():
+                    continue
 
-    @staticmethod
-    def from_nfa(nfa):
-        # Create initial DFA state from epsilon closure of NFA start state
-        start_nfa_states = DFA.epsilon_closure({nfa.start_state})
-        start_dfa_state = DFAState(DFA.state_counter, start_nfa_states)
-        DFA.state_counter += 1
-        dfa_state_map = {frozenset(start_nfa_states): start_dfa_state}
-        accept_states = set()
-        if DFA.contains_accept_state(start_nfa_states, nfa.accept_states):
-            accept_states.add(start_dfa_state)
+                trstates = set()
+                for s in state:
+                    trstates.update(nfa.gettransitions(s, char))
 
-        # Worklist for unprocessed DFA states
-        worklist = [start_dfa_state]
+                expanded_trstates = set()
+                for s in trstates:
+                    if s not in eclose:
+                        eclose[s] = nfa.getEClose(s)
+                    expanded_trstates.update(eclose[s])
 
-        dfa = DFA(start_dfa_state, accept_states)
+                trstates = frozenset(sorted(expanded_trstates))
 
-        while worklist:
-            dfa_state = worklist.pop(0)
-            dfa.states.add(dfa_state)
+                if trstates:
+                    if trstates not in allstates.values():
+                        states.append([trstates, count])
+                        allstates[count] = trstates
+                        toindex = count
+                        count += 1
+                    else:
+                        toindex = [k for k, v in allstates.items() if v == trstates][0]
+                    dfa.addtransition(fromindex, toindex, char)
 
-            # Get all symbols from NFA transitions
-            symbols = set()
-            for nfa_state in dfa_state.nfa_states:
-                symbols.update(nfa_state.transitions.keys())
+        # Handle final states carefully, ensuring only correct final states are marked
+        for value, state in allstates.items():
+            if any(final in state for final in nfa.finalstates):
+                dfa.addfinalstates(value)
 
-            # Process each symbol to create new DFA states
-            for symbol in symbols:
-                # Perform epsilon closure on the set of next NFA states
-                next_nfa_states = set()
-                for nfa_state in dfa_state.nfa_states:
-                    if symbol in nfa_state.transitions:
-                        next_nfa_states.update(nfa_state.transitions[symbol])
+        self.dfa = dfa
+        print("DFA Construction Complete")
 
-                next_nfa_states = DFA.epsilon_closure(next_nfa_states)
+    def minimise(self):
+        final_states = set(self.dfa.finalstates)
+        non_final_states = self.dfa.states - final_states
 
-                if frozenset(next_nfa_states) not in dfa_state_map:
-                    next_dfa_state = DFAState(DFA.state_counter, next_nfa_states)
-                    DFA.state_counter += 1
-                    dfa_state_map[frozenset(next_nfa_states)] = next_dfa_state
-                    worklist.append(next_dfa_state)
+        partitions = [final_states, non_final_states] if non_final_states else [final_states]
 
-                    if DFA.contains_accept_state(next_nfa_states, nfa.accept_states):
-                        dfa.accept_states.add(next_dfa_state)
-                else:
-                    next_dfa_state = dfa_state_map[frozenset(next_nfa_states)]
+        while True:
+            new_partitions = []
+            for part in partitions:
+                splits = {}
+                for state in part:
+                    key = tuple(
+                        self.find_partition(self.get_trans_state(state, char), partitions) for char in sorted(self.alphabet)
+                    )
+                    if key not in splits:
+                        splits[key] = set()
+                    splits[key].add(state)
 
-                dfa_state.add_transition(symbol, next_dfa_state)
+                new_partitions.extend(splits.values())
 
-        return dfa
+            if len(new_partitions) == len(partitions):
+                break
+            partitions = new_partitions
 
-    @staticmethod
-    def epsilon_closure(states):
-        closure = set(states)
-        stack = list(states)
+        state_map = {}
+        new_state_id = 1
+        for part in sorted(new_partitions, key=lambda x: min(x) if x else float('inf')):
+            for state in part:
+                state_map[state] = new_state_id
+            new_state_id += 1
 
-        while stack:
-            state = stack.pop()
-            for next_state in state.epsilon_transitions:
-                if next_state not in closure:
-                    closure.add(next_state)
-                    stack.append(next_state)
+        self.minDFA = Automata(self.dfa.language)
+        self.minDFA.setstartstate(state_map[self.dfa.startstate])
+        self.minDFA.addfinalstates([state_map[s] for s in self.dfa.finalstates])
 
-        return closure
+        for fromstate, tostates in self.dfa.transitions.items():
+            for tostate, chars in tostates.items():
+                for char in chars:
+                    mapped_from = state_map[fromstate]
+                    mapped_to = state_map[tostate]
+                    self.minDFA.addtransition(mapped_from, mapped_to, char)
 
-    @staticmethod
-    def contains_accept_state(nfa_states, accept_states):
-        # Check if any state in nfa_states is also in accept_states
-        for state in nfa_states:
-            if state in accept_states:
-                return True
-        return False
+        print("DFA Minimization Complete")
 
+    def get_trans_state(self, state, char):
+        transitions = self.dfa.gettransitions(state, char)
+        return next(iter(transitions), None)
 
-
+    def find_partition(self, state, partitions):
+        for i, part in enumerate(partitions):
+            if state in part:
+                return i
+        return -1
